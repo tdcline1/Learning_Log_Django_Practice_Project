@@ -1,6 +1,7 @@
 from django.http import Http404
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
+from django.db.models import Q
 
 from .models import Topic, Entry
 from .forms import TopicForm, EntryForm
@@ -13,7 +14,12 @@ def index(request):
 @login_required
 def topics(request):
     """render topics page"""
-    topics = Topic.objects.filter(owner=request.user).order_by('date_added')
+    # Complex query using q object to find topics that are either 
+    # owned by current user or public
+    topics = Topic.objects.filter(
+        Q(owner=request.user) | Q(public=True)
+    ).order_by('date_added')
+
     context = {'topics': topics}
     return render(request, 'learning_logs/topics.html', context)
 
@@ -61,6 +67,7 @@ def new_entry(request, topic_id):
         if form.is_valid():
             new_entry = form.save(commit=False)
             new_entry.topic = topic
+            new_entry.owner = request.user
             new_entry.save()
             return redirect('learning_logs:topic', topic_id=topic_id)
 
@@ -73,7 +80,8 @@ def edit_entry(request, entry_id):
     """edit an existing entry for the specified topic!"""
     entry = Entry.objects.get(id=entry_id)
     topic = entry.topic
-    owner_check(request, topic)
+    if entry.owner != request.user:
+        raise Http404
     
     if request.method != 'POST':
         # No data submitted; create a blank form
@@ -90,6 +98,6 @@ def edit_entry(request, entry_id):
     return render(request, 'learning_logs/edit_entry.html', context)
 
 def owner_check(request, topic):
-    """Check is user requesting information has access"""
-    if topic.owner != request.user:
+    """Check if user requesting information has access"""
+    if topic.owner != request.user and topic.public != True:
         raise Http404
